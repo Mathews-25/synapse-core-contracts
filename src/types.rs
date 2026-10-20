@@ -67,6 +67,11 @@ pub struct Transaction {
     /// Asset issuer address.
     pub asset_issuer: Address,
     /// Number of retries attempted so far.
+    ///
+    /// Defaults to `0` for every transaction created via `register_callback`
+    /// / `batch_register_callback`, and is incremented by `retry_transaction`
+    /// (issue #61) up to the configured max-retry limit. Packed into
+    /// [`StoredTransaction::packed`] bits 8..=11.
     pub retry_count: u32,
     /// Arbitrary tags attached to the transaction.
     pub tags: Vec<String>,
@@ -79,7 +84,8 @@ pub struct Transaction {
 ///
 /// - bits 0..=3   : `status` (4 bits, up to 16 variants)
 /// - bits 4..=7   : `callback_type` (4 bits, up to 16 variants)
-/// - bits 8..=31  : `retry_count` (24 bits, up to 16,777,215 retries)
+/// - bits 8..=11  : `retry_count` (4 bits, up to 15 retries)
+/// - bits 12..=31 : reserved (must be zero)
 ///
 /// The remaining fields are stored verbatim. Use the conversions in
 /// `storage.rs` to move between this and [`Transaction`].

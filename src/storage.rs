@@ -18,8 +18,12 @@ const CALLBACK_MASK: u32 = 0xF;
 
 /// Bit offset of the `retry_count` field within `StoredTransaction::packed`.
 const RETRY_SHIFT: u32 = 8;
-/// Bit mask for the `retry_count` field (24 bits).
-const RETRY_MASK: u32 = 0xFF_FFFF;
+/// Bit mask for the `retry_count` field (4 bits).
+///
+/// Sized generously (4 bits, max 15) relative to the original wave 9 design
+/// intent of a max-retry constant of 3, so a future increase does not require
+/// a breaking re-pack of the stored representation.
+const RETRY_MASK: u32 = 0xF;
 
 /// Map a `u32` discriminant back to a [`TransactionStatus`].
 fn status_from_u32(value: u32) -> TransactionStatus {
@@ -94,7 +98,7 @@ mod tests {
             stellar_account: Address::generate(&env),
             asset_code: String::from_str(&env, "USDC"),
             asset_issuer: Address::generate(&env),
-            retry_count: 42,
+            retry_count: 3,
             tags: Vec::new(&env),
         };
 
@@ -102,5 +106,45 @@ mod tests {
         let restored = unpack(&stored);
 
         assert_eq!(restored, tx);
+    }
+
+    #[test]
+    fn retry_count_defaults_to_zero_and_round_trips() {
+        let env = Env::default();
+        let tx = Transaction {
+            tx_id: Bytes::from_array(&env, &[9, 9]),
+            status: TransactionStatus::Pending,
+            callback_type: CallbackType::None,
+            amount: 0,
+            stellar_account: Address::generate(&env),
+            asset_code: String::from_str(&env, "XLM"),
+            asset_issuer: Address::generate(&env),
+            retry_count: 0,
+            tags: Vec::new(&env),
+        };
+
+        let stored = pack(&tx);
+        assert_eq!((stored.packed >> RETRY_SHIFT) & RETRY_MASK, 0);
+        assert_eq!(unpack(&stored).retry_count, 0);
+    }
+
+    #[test]
+    fn retry_count_is_masked_to_four_bits() {
+        let env = Env::default();
+        let tx = Transaction {
+            tx_id: Bytes::from_array(&env, &[7]),
+            status: TransactionStatus::Retrying,
+            callback_type: CallbackType::OnComplete,
+            amount: 5,
+            stellar_account: Address::generate(&env),
+            asset_code: String::from_str(&env, "USDC"),
+            asset_issuer: Address::generate(&env),
+            retry_count: 0xF,
+            tags: Vec::new(&env),
+        };
+
+        let stored = pack(&tx);
+        assert_eq!((stored.packed >> RETRY_SHIFT) & RETRY_MASK, 0xF);
+        assert_eq!(unpack(&stored).retry_count, 0xF);
     }
 }
