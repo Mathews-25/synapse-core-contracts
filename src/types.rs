@@ -1,9 +1,11 @@
 //! Core data types for the transaction contract.
 //!
 //! This module is a pure data-definition module: it declares the public
-//! [`Transaction`] type returned by queries and the packed
-//! [`StoredTransaction`] form persisted to ledger storage. The pack/unpack
-//! conversion logic lives in `storage.rs`.
+//! [`Transaction`] type returned by queries, the packed
+//! [`StoredTransaction`] form persisted to ledger storage, and the
+//! [`CallbackPayload`] argument accepted by `register_callback` /
+//! `batch_register_callback`. The pack/unpack conversion logic lives in
+//! `storage.rs`.
 
 use soroban_sdk::{contracttype, Address, Bytes, String, Vec};
 
@@ -98,4 +100,53 @@ pub struct StoredTransaction {
     pub asset_issuer: Address,
     /// Arbitrary tags attached to the transaction.
     pub tags: Vec<String>,
+}
+
+/// Argument accepted by `register_callback` and `batch_register_callback`.
+///
+/// This is the hand-off contract between the off-chain relay and this
+/// contract. Its field set is exactly the set of fields that
+/// `THREAT_MODEL.md` §4.2 documents as validated on `register_callback`:
+///
+/// - `tx_id` — idempotency / transaction identifier used by dedup (issue #22)
+///   to reject duplicate registrations.
+/// - `amount` — checked against the configured amount bounds.
+/// - `stellar_account` — validated as a well-formed strkey account.
+/// - `asset_code` — length-bounded asset code (e.g. "USDC").
+/// - `asset_issuer` — validated as a well-formed strkey issuer.
+///
+/// The struct is intentionally lean: field ordering and count feed into the
+/// batch-cost resource budget (see the `5f66065` commit message, "3 of the 25
+/// write entries"), so do not pad it speculatively.
+///
+/// # Mapping to storage
+///
+/// A validated `CallbackPayload` maps deterministically onto the stored
+/// [`Transaction`] / [`StoredTransaction`] (issue #11):
+///
+/// - `tx_id`            -> `Transaction::tx_id` / `StoredTransaction::tx_id`
+/// - `amount`           -> `Transaction::amount` / `StoredTransaction::amount`
+/// - `stellar_account`  -> `Transaction::stellar_account` /
+///   `StoredTransaction::stellar_account`
+/// - `asset_code`       -> `Transaction::asset_code` /
+///   `StoredTransaction::asset_code`
+/// - `asset_issuer`     -> `Transaction::asset_issuer` /
+///   `StoredTransaction::asset_issuer`
+///
+/// Fields not present on the payload take their defaults: `status` is
+/// `Pending`, `callback_type` is `None`, `retry_count` is `0`, and `tags` is
+/// empty.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CallbackPayload {
+    /// Idempotency / transaction identifier used for dedup.
+    pub tx_id: Bytes,
+    /// Amount transferred; validated against the configured bounds.
+    pub amount: i128,
+    /// Destination Stellar account; validated as a strkey account.
+    pub stellar_account: Address,
+    /// Asset code (e.g. "USDC"); length-bounded.
+    pub asset_code: String,
+    /// Asset issuer address; validated as a strkey issuer.
+    pub asset_issuer: Address,
 }
