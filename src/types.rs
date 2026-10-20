@@ -8,19 +8,25 @@
 use soroban_sdk::{contracttype, Address, Bytes, String, Vec};
 
 /// Lifecycle status of a transaction.
+///
+/// Mirrors the "Transaction lifecycle (on-chain)" diagram in `README.md`:
+/// `Pending -> Processing -> Completed`, with `Failed` and `Cancelled` as two
+/// independent terminal branches. Discriminant values are stable across
+/// upgrades and must not be reordered, since they are packed into the low
+/// 4 bits of [`StoredTransaction::packed`].
 #[contracttype]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u32)]
 pub enum TransactionStatus {
     /// Transaction has been registered but not yet processed.
     Pending = 0,
-    /// Transaction completed successfully.
-    Completed = 1,
-    /// Transaction failed permanently.
-    Failed = 2,
-    /// Transaction is being retried after a failure.
-    Retrying = 3,
-    /// Transaction was cancelled.
+    /// Transaction is actively being processed.
+    Processing = 1,
+    /// Transaction completed successfully (terminal).
+    Completed = 2,
+    /// Transaction failed permanently (terminal).
+    Failed = 3,
+    /// Transaction was cancelled (terminal).
     Cancelled = 4,
 }
 
