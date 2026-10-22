@@ -2,9 +2,11 @@
 //!
 //! This module owns the pack/unpack conversion between the public
 //! [`Transaction`] type and the packed [`StoredTransaction`] form persisted to
-//! ledger storage.
+//! ledger storage, and also centralises the storage keys and small read/write
+//! helpers used by the contract entry points.
 
 use crate::types::{CallbackType, StoredTransaction, Transaction, TransactionStatus};
+use soroban_sdk::{contracttype, Address, Env};
 
 /// Bit offset of the `status` field within `StoredTransaction::packed`.
 const STATUS_SHIFT: u32 = 0;
@@ -24,6 +26,21 @@ const RETRY_SHIFT: u32 = 8;
 /// intent of a max-retry constant of 3, so a future increase does not require
 /// a breaking re-pack of the stored representation.
 const RETRY_MASK: u32 = 0xF;
+
+/// Storage keys used by the contract.
+///
+/// Kept as a single enum so that every entry point shares one namespaced key
+/// space and later issues can extend it without touching `lib.rs`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DataKey {
+    /// Contract administrator address.
+    Admin,
+    /// Relay signer address authorised to submit relayed operations.
+    RelaySigner,
+    /// Whether the contract has been initialised.
+    Initialized,
+}
 
 /// Map a `u32` discriminant back to a [`TransactionStatus`].
 fn status_from_u32(value: u32) -> TransactionStatus {
@@ -80,6 +97,84 @@ pub fn unpack(stored: &StoredTransaction) -> Transaction {
         retry_count,
         tags: stored.tags.clone(),
     }
+}
+
+/// Returns whether the contract has been initialised.
+///
+/// # Arguments
+///
+/// * `env` - The Soroban environment.
+///
+/// # Returns
+///
+/// `true` if the `Initialized` flag is set in instance storage.
+#[must_use]
+pub fn is_initialized(env: &Env) -> bool {
+    env.storage()
+        .instance()
+        .get(&DataKey::Initialized)
+        .unwrap_or(false)
+}
+
+/// Marks the contract as initialised in instance storage.
+///
+/// # Arguments
+///
+/// * `env` - The Soroban environment.
+pub fn set_initialized(env: &Env) {
+    env.storage()
+        .instance()
+        .set(&DataKey::Initialized, &true);
+}
+
+/// Stores the contract administrator address in instance storage.
+///
+/// # Arguments
+///
+/// * `env` - The Soroban environment.
+/// * `admin` - The administrator address to persist.
+pub fn set_admin(env: &Env, admin: &Address) {
+    env.storage().instance().set(&DataKey::Admin, admin);
+}
+
+/// Returns the stored contract administrator address, if any.
+///
+/// # Arguments
+///
+/// * `env` - The Soroban environment.
+///
+/// # Returns
+///
+/// `Some(admin)` when the contract has been initialised, otherwise `None`.
+#[must_use]
+pub fn get_admin(env: &Env) -> Option<Address> {
+    env.storage().instance().get(&DataKey::Admin)
+}
+
+/// Stores the relay signer address in instance storage.
+///
+/// # Arguments
+///
+/// * `env` - The Soroban environment.
+/// * `relay_signer` - The relay signer address to persist.
+pub fn set_relay_signer(env: &Env, relay_signer: &Address) {
+    env.storage()
+        .instance()
+        .set(&DataKey::RelaySigner, relay_signer);
+}
+
+/// Returns the stored relay signer address, if any.
+///
+/// # Arguments
+///
+/// * `env` - The Soroban environment.
+///
+/// # Returns
+///
+/// `Some(relay_signer)` when the contract has been initialised, otherwise `None`.
+#[must_use]
+pub fn get_relay_signer(env: &Env) -> Option<Address> {
+    env.storage().instance().get(&DataKey::RelaySigner)
 }
 
 #[cfg(test)]
@@ -147,4 +242,5 @@ mod tests {
         assert_eq!((stored.packed >> RETRY_SHIFT) & RETRY_MASK, 0xF);
         assert_eq!(unpack(&stored).retry_count, 0xF);
     }
+}
 }
