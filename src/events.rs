@@ -1,7 +1,10 @@
 //! Event definitions and emission helpers for the contract.
 //!
 //! Events are emitted with a stable topic so off-chain indexers can filter
-//! reliably. The `upgrade` topic is emitted by the admin-gated `upgrade()`
+//! reliably. The `init` topic is emitted exactly once by
+//! `initialize(admin, relay_signer)`.
+//!
+//! The `upgrade` topic is emitted by the admin-gated `upgrade()`
 //! entry point after a successful WASM swap (see `DECISIONS.md` §5).
 //!
 //! The `guardian_revoke` topic is emitted by the guardian emergency admin
@@ -16,6 +19,9 @@
 
 use soroban_sdk::{contracttype, symbol_short, Address, BytesN, Env, Symbol};
 
+/// Topic symbol for the contract-initialized event ("init" per README).
+pub const TOPIC_INIT: Symbol = symbol_short!("init");
+
 /// Topic symbol used for contract-upgrade events.
 pub const UPGRADE_TOPIC: Symbol = symbol_short!("upgrade");
 
@@ -25,6 +31,16 @@ pub const GUARDIAN_REVOKE_TOPIC: Symbol = symbol_short!("guardian_revoke");
 /// Topic symbol used for relay-related events (matches the "relay" topic in
 /// `EVENTS.md`).
 pub const RELAY_TOPIC: Symbol = symbol_short!("relay");
+
+/// Payload emitted when the contract is initialized for the first time.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EventContractInitialized {
+    /// The admin address stored during initialization.
+    pub admin: Address,
+    /// The relay signer address stored during initialization.
+    pub relay_signer: Address,
+}
 
 /// Payload emitted when the contract WASM is upgraded in place.
 ///
@@ -59,6 +75,18 @@ pub struct EventRelaySignerRotated {
     pub old_signer: Address,
     /// The relay signer that is active after the rotation.
     pub new_signer: Address,
+}
+
+/// Emit the `EventContractInitialized` event under the "init" topic.
+///
+/// Called exactly once from `initialize`; the one-time-init guard in the
+/// contract ensures this emitter is never reached on a second call.
+pub fn emit_contract_initialized(env: &Env, admin: Address, relay_signer: Address) {
+    let event = EventContractInitialized {
+        admin,
+        relay_signer,
+    };
+    env.events().publish((TOPIC_INIT,), event);
 }
 
 /// Emit the `upgrade` event for a successful in-place WASM swap.
@@ -102,4 +130,5 @@ pub fn emit_relay_signer_rotated(env: &Env, old_signer: Address, new_signer: Add
         new_signer,
     };
     env.events().publish((RELAY_TOPIC,), event);
+}
 }

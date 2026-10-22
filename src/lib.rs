@@ -1,29 +1,59 @@
-    /// Propose a new admin. Only the current admin may call this.
+#![no_std]
+
+//! Contract skeleton for the Soroban smart contract.
+//!
+//! This crate root wires together the module layout documented in
+//! `README.md` ("Module layout") and exposes the `Contract` type that every
+//! entry point in this wave attaches to. It intentionally declares zero entry
+//! points; subsequent issues add them incrementally to the `#[contractimpl]`
+//! block below.
+
+mod admin;
+mod events;
+mod storage;
+mod types;
+mod validation;
+
+use soroban_sdk::{contract, contractimpl, Address, BytesN, Env};
+
+use crate::types::ContractError;
+
+/// The contract type that all entry points are implemented on.
+#[contract]
+pub struct Contract;
+
+/// Entry-point scaffolding. Intentionally empty for now; later issues add
+/// `pub fn` entry points here rather than rewriting this file.
+#[contractimpl]
+impl Contract {
+    /// One-time contract initialization.
     ///
-    /// Overwrites any previously pending proposal rather than stacking.
-    pub fn propose_admin(env: Env, new_admin: Address) -> Result<(), AdminError> {
-        let current = storage::get_admin(&env).ok_or(AdminError::NotInitialized)?;
-        current.require_auth();
-        storage::set_pending_admin(&env, &new_admin);
+    /// Stores `admin` and `relay_signer` into instance storage (hot-path tier
+    /// per `README.md`) and emits `EventContractInitialized` exactly once.
+    ///
+    /// # Arguments
+    ///
+    /// * `admin` - The administrative address for the contract.
+    /// * `relay_signer` - The address authorized to sign relayed operations.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ContractError::AlreadyInitialized`] if the contract has
+    /// already been initialized, regardless of the arguments supplied.
+    pub fn initialize(env: Env, admin: Address, relay_signer: Address) -> Result<(), ContractError> {
+        if storage::is_initialized(&env) {
+            return Err(ContractError::AlreadyInitialized);
+        }
+
+        storage::set_admin(&env, &admin);
+        storage::set_relay_signer(&env, &relay_signer);
+        storage::set_initialized(&env);
+
+        events::emit_contract_initialized(&env, &admin, &relay_signer);
+
         Ok(())
     }
 
-    /// Returns the live schema version of the contract's storage layout.
-    ///
-    /// This is a cheap query backed by [`SCHEMA_VERSION`]; it is not derived
-    /// from WASM metadata.
-    pub fn schema_version(_env: Env) -> u32 {
-        SCHEMA_VERSION
-    }
-
-    /// Upgrades the contract WASM to `new_wasm_hash`.
-    ///
-    /// Admin-gated via `require_auth()`. The caller's `expected_schema_version`
-    /// must match the l
-pub struct Contract;
-
-#[contractimpl]
-impl Contract {
     /// Propose a new admin. Only the current admin may call this.
     ///
     /// Overwrites any previously pending proposal rather than stacking.
@@ -183,8 +213,6 @@ impl Contract {
             },
         );
 
-        Ok(())
-    }
         Ok(())
     }
 }
