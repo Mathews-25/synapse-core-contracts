@@ -10,6 +10,9 @@
 //! distinct from the normal `propose_admin`/`accept_admin` transfer events so
 //! downstream monitoring can tell a planned handoff apart from an emergency
 //! revocation.
+//!
+//! Relay signer rotation events are emitted under the `relay` topic and mirror
+//! the schema in `EVENTS.md`; keep them in sync.
 
 use soroban_sdk::{contracttype, symbol_short, Address, BytesN, Env, Symbol};
 
@@ -18,6 +21,10 @@ pub const UPGRADE_TOPIC: Symbol = symbol_short!("upgrade");
 
 /// Topic symbol used for guardian emergency admin revocation events.
 pub const GUARDIAN_REVOKE_TOPIC: Symbol = symbol_short!("guardian_revoke");
+
+/// Topic symbol used for relay-related events (matches the "relay" topic in
+/// `EVENTS.md`).
+pub const RELAY_TOPIC: Symbol = symbol_short!("relay");
 
 /// Payload emitted when the contract WASM is upgraded in place.
 ///
@@ -42,6 +49,16 @@ pub struct EventGuardianAdminRevoked {
     pub guardian: Address,
     pub revoked_admin: Address,
     pub new_admin: Address,
+}
+
+/// Payload emitted when the relay signer is rotated.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EventRelaySignerRotated {
+    /// The relay signer that was active before the rotation.
+    pub old_signer: Address,
+    /// The relay signer that is active after the rotation.
+    pub new_signer: Address,
 }
 
 /// Emit the `upgrade` event for a successful in-place WASM swap.
@@ -73,4 +90,16 @@ pub fn emit_guardian_admin_revoked(
         new_admin,
     };
     env.events().publish((GUARDIAN_REVOKE_TOPIC,), payload);
+}
+
+/// Emit an [`EventRelaySignerRotated`] event under the `relay` topic.
+///
+/// This is emitted on every successful `set_relay_signer` call, including
+/// no-op rotations to the currently-active signer.
+pub fn emit_relay_signer_rotated(env: &Env, old_signer: Address, new_signer: Address) {
+    let event = EventRelaySignerRotated {
+        old_signer,
+        new_signer,
+    };
+    env.events().publish((RELAY_TOPIC,), event);
 }

@@ -1,3 +1,13 @@
+    /// Propose a new admin. Only the current admin may call this.
+    ///
+    /// Overwrites any previously pending proposal rather than stacking.
+    pub fn propose_admin(env: Env, new_admin: Address) -> Result<(), AdminError> {
+        let current = storage::get_admin(&env).ok_or(AdminError::NotInitialized)?;
+        current.require_auth();
+        storage::set_pending_admin(&env, &new_admin);
+        Ok(())
+    }
+
     /// Returns the live schema version of the contract's storage layout.
     ///
     /// This is a cheap query backed by [`SCHEMA_VERSION`]; it is not derived
@@ -14,6 +24,56 @@ pub struct Contract;
 
 #[contractimpl]
 impl Contract {
+    /// Propose a new admin. Only the current admin may call this.
+    ///
+    /// Overwrites any previously pending proposal rather than stacking.
+    pub fn propose_admin(env: Env, new_admin: Address) -> Result<(), AdminError> {
+        let current = storage::get_admin(&env).ok_or(AdminError::NotInitialized)?;
+        current.require_auth();
+        storage::set_pending_admin(&env, &new_admin);
+        Ok(())
+    }
+
+    /// Accept a pending admin transfer. Only the stored `pending_admin` may call this.
+    ///
+    /// Finalizes the transfer, clears `pending_admin`, and emits the `admin` event.
+    pub fn accept_admin(env: Env, caller: Address) -> Result<(), AdminError> {
+        caller.require_auth();
+        let pending = storage::get_pending_admin(&env).ok_or(AdminError::NoPendingAdmin)?;
+        if caller != pending {
+            return Err(AdminError::NotPendingAdmin);
+        }
+        storage::set_admin(&env, &pending);
+        storage::clear_pending_admin(&env);
+        events::admin_transferred(&env, &pending);
+        Ok(())
+    }
+
+    /// Read-only query returning the current admin, if set.
+    pub fn admin(env: Env) -> Option<Address> {
+        storage::get_admin(&env)
+    }
+
+    /// Read-only query returning the pending admin proposal, if any.
+    pub fn pending_admin(env: Env) -> Option<Address> {
+        storage::get_pending_admin(&env)
+    }
+
+    /// Rotate the single relay signer immediately (no timelock).
+    ///
+    /// Admin-gated via the shared `require_admin` helper. Persists `new_signer`
+    /// so `relay_signer()` returns it right away and `register_callback`
+    /// authenticates against the updated value. Emits `EventRelaySignerRotated`
+    /// carrying the old and new signer addresses on every successful call,
+    /// including no-op rotations to the currently-active signer.
+    pub fn set_relay_signer(env: Env, new_signer: Address) -> Result<(), AdminError> {
+        admin::require_admin(&env)?;
+        let old_signer = storage::get_relay_signer(&env);
+        storage::set_relay_signer(&env, &new_signer);
+        events::relay_signer_rotated(&env, &old_signer, &new_signer);
+        Ok(())
+    }
+
     /// Returns the live schema version of the contract's storage layout.
     ///
     /// This is a cheap query backed by [`SCHEMA_VERSION`]; it is not derived
@@ -125,7 +185,12 @@ impl Contract {
 
         Ok(())
     }
+        Ok(())
+    }
 }
+
+// Re-export the admin error type for callers.
+pub use admin::AdminError as ContractError;
 
 /// Compile-time guard that `ContractError` stays within Soroban's 50-variant cap.
 ///
